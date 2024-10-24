@@ -1,6 +1,16 @@
 ## Winter 2022
 ## Project: Importation Risk
 ## Zahra Mohammadi
+
+# Revised by Amy Hurford on October 18, 2024. General linear models were changed to
+# generalized linear models (poisson). The original GLM code is commented out. The 
+# mechanistic model is changed to be evaluated relative to a Poisson distribution.
+# Rather than reporting R^2, the code was changed to report the likelihood test ratio
+# statistic, since R^2 cannot be interpretted as the proportion of the variance
+# explained for generalized linear models. A section was also added to consider travel
+# volume with just the IATA data.
+
+
 ##---------- 1. Load libraries ------------
 source("preliminaries.R")
 
@@ -36,7 +46,7 @@ for (i in 1:length(origins)){
   rt_Volume[pr] <- Volume[pr] - rw_Volume[pr]
 }
 
-## For validate purpose--Reported travel-related cases in NL
+## Reported travel-related cases in NL
 Travel_case <- read.csv("Data/Travel.Case.csv") 
 Travel_case$date <- as.Date(Travel_case$date, format = "%Y-%m-%d") 
 
@@ -403,41 +413,68 @@ df.model6 <- df.model6 %>% left_join(Dailyinfpre, by ="date")
 df.model6 <- select(df.model6, c(date, Rep.Int, vol, US) ) %>% rename( infpre = US)
 df.model6["volinf"] <- df.model6$vol*df.model6$infpre
 
-#travel volume
-TVInt <- lm(Rep.Int ~ 0 + vol, data = df.model6)
+#travel volume (as GLM)
+#TVInt <- lm(Rep.Int ~ 0 + vol, data = df.model6)
+#summary(TVInt)
+
+TVInt <- glm(Rep.Int ~ 0 + vol, data = df.model6,family = poisson(link = "log"))
 summary(TVInt)
 
-#infection
-InfInt <- lm(Rep.Int ~ 0 + infpre, data = df.model6)
+
+#infection (as GLM is commented out)
+#InfInt <- lm(Rep.Int ~ 0 + infpre, data = df.model6)
+#summary(InfInt)
+
+# As Poisson regression
+InfInt <- glm(Rep.Int ~ 0 + infpre, data = df.model6, family = poisson(link = "log"))
 summary(InfInt)
 
+
+#both travel volume and infection (as GLM commented out)
+#TVInfInt <- lm(Rep.Int ~ 0 + volinf , data = df.model6)
+#summary(TVInfInt)
+
 #both travel volume and infection
-TVInfInt <- lm(Rep.Int ~ 0 + volinf , data = df.model6)
+TVInfInt <- glm(Rep.Int ~ 0 + volinf , data = df.model6, family = poisson(link="log"))
 summary(TVInfInt)
+
 
 mod <- list(TVInt, InfInt, TVInfInt)
 mod.name <-  c("TravelVolume-Int", "Infection.Prevalence-Int", "TravelVolume*Infection.Prevalence-Int")
-aictab(cand.set = mod, modnames = mod.name , c.hat = 1) 
+AIC.INT = aictab(cand.set = mod, modnames = mod.name , c.hat = 1) 
+LR.INT = -2*(-TVInt$null.deviance - c(logLik(TVInt),logLik(TVInfInt),logLik(InfInt)))
+AIC.INT = data.frame(AIC.INT, LR = LR.INT)
 
 ######### Models for Domestic
 df.model7 <- select( Travel_case, c(date, Tot.Dom)) %>% left_join(Volume , by ="date") 
 df.model7 <- select(df.model7, -c(US)) %>% rename(Rep.Dom = Tot.Dom)
 df.model7["vol.CA"] <- rowSums(df.model7[, c("ON", "PEI", "QC", "SK", "AB", "BC", "MB", "NB", "NS", "TR")])
-#travel volume provinces
-TVPr <- lm(Rep.Dom ~ 0+ AB + BC + MB + NB + NS + ON + PEI + QC + SK + TR, data = df.model7 ) 
+#travel volume provinces (commented out as a GLM)
+#TVPr <- lm(Rep.Dom ~ 0+ AB + BC + MB + NB + NS + ON + PEI + QC + SK + TR, data = df.model7 ) 
+#summary(TVPr)
+TVPr <- glm(Rep.Dom ~ 0+ AB + BC + MB + NB + NS + ON + PEI + QC + SK + TR, data = df.model7, family=poisson(link = "log"))
 summary(TVPr)
-#travel volume Canada
-TVCA <- lm( Rep.Dom ~ 0 + vol.CA, data= df.model7)
+
+
+#travel volume Canada (commented out as a GLM)
+#TVCA <- lm( Rep.Dom ~ 0 + vol.CA, data= df.model7)
+#summary(TVCA)
+TVCA=glm( Rep.Dom ~ 0 + vol.CA, data= df.model7, family = poisson(link= "log"))
 summary(TVCA)
 
 df.model8 <- select( Travel_case, c(date, Tot.Dom)) %>% left_join( Dailyinfpre, by ="date") 
 df.model8 <- select(df.model8, -c(US)) %>% rename(Rep.Dom = Tot.Dom)
 df.model8["inf.CA"] <- rowSums(df.model8[, c("ON", "PEI", "QC", "SK", "AB", "BC", "MB", "NB", "NS", "TR")])
 #infection provinces
-InfPr <- lm(Rep.Dom ~  0 + AB + BC + MB + NB + NS + ON + PEI + QC + SK + TR, data = df.model8)
+#InfPr <- lm(Rep.Dom ~  0 + AB + BC + MB + NB + NS + ON + PEI + QC + SK + TR, data = df.model8)
+#summary(InfPr)
+InfPr <- glm(Rep.Dom ~  0 + AB + BC + MB + NB + NS + ON + PEI + QC + SK + TR, data = df.model8, family = poisson(link = "log"))
 summary(InfPr)
+
 #infection Canada
-InfCA <- lm(Rep.Dom  ~ 0+ inf.CA , data = df.model8 )
+#InfCA <- lm(Rep.Dom  ~ 0+ inf.CA , data = df.model8 )
+#summary(InfCA)
+InfCA <- glm(Rep.Dom  ~ 0+ inf.CA , data = df.model8, family = poisson(link = "log"))
 summary(InfCA)
 
 ##both travel volume*infection
@@ -458,60 +495,84 @@ df.model9 <- multivolinf(df.model7, df.model8, origins)
 df.model9["volinfCA"] <- (df.model7$vol.CA)*(df.model8$inf.CA)
 df.model9 <- select(df.model9, -c(vol.CA))
 #province  
-TVInfPr <- lm(Rep.Dom  ~ 0 + AB + BC + MB + NB + NS + ON + PEI + QC + SK + TR ,  data = df.model9 )
+#TVInfPr <- lm(Rep.Dom  ~ 0 + AB + BC + MB + NB + NS + ON + PEI + QC + SK + TR ,  data = df.model9 )
+#summary(TVInfPr)
+TVInfPr=glm(Rep.Dom  ~ 0 + AB + BC + MB + NB + NS + ON + PEI + QC + SK + TR ,  data = df.model9 ,family = poisson(link = "log"))
 summary(TVInfPr)
-#Canada
-TVInfCA <- lm(Rep.Dom  ~ 0 + volinfCA , data = df.model9 )
-summary(TVInfCA)
 
+
+#Canada
+#TVInfCA <- lm(Rep.Dom  ~ 0 + volinfCA , data = df.model9 )
+#summary(TVInfCA)
+TVInfCA <- glm(Rep.Dom  ~ 0 + volinfCA , data = df.model9 , family = poisson(link = "log"))
+summary(TVInfCA)
 
 models <- list(TVPr, TVCA, InfPr, InfCA, TVInfPr, TVInfCA )
 model.names <-  c("Travel.Volume-Provinces", "Travel.Volume-CA", "Infection.Prevalence-Provinces", 
                   "Infection.Prevalence-CA", "TravelVolume*Infection.Prevalence-Provinces",
                   "TravelVolume*Infection.Prevalence-CA")
-aictab(cand.set = models, modnames = model.names, c.hat = 1) 
+LR.CA = -2*(-TVPr$null.deviance - c(logLik(TVPr),logLik(TVCA),logLik(InfPr), logLik(InfCA), logLik(TVInfPr),logLik(InfCA)))
+AIC.CA = aictab(cand.set = models, modnames = model.names, c.hat = 1)
+AIC.CA = data.frame(AIC.CA,LR=LR.CA[c(5,3,1,6,2,4)])
+
+
 
 ################ model for epidemiology model output
 df.modelfull <- select(IMP, c("report", "REW.Ca", "RE.Int")) %>% rename(date = report)
 df.modelfull <- df.modelfull %>% left_join(select(Travel_case, c(date, Tot.Dom, Tot.Int)), by = "date") 
 df.modelfull <- df.modelfull %>% rename(Est.Dom = REW.Ca, Est.Int = RE.Int ,
                                         Rep.Dom = Tot.Dom, Rep.Int = Tot.Int)
-set.seed(1066); 
-normalF <- function(sigma) {
-  x <- df.modelfull$Est.Dom  #Est.Int
-  y <- df.modelfull$Rep.Dom  #Rep.Int
-  sum (- 0.5*log(2*pi) - 0.5*log(sigma) - 0.5*(x - y)^2/sigma )
-}
+# commented out due to normal distribution
+#set.seed(1066); 
+#normalF <- function(sigma) {
+#  x <- df.modelfull$Est.Dom  #Est.Int
+#  y <- df.modelfull$Rep.Dom  #Rep.Int
+#  sum (- 0.5*log(2*pi) - 0.5*log(sigma) - 0.5*(x - y)^2/sigma )
+#}
 
-MLE = optim(c(0.1),               
-            fn = normalF,         # function to maximize
-            method = "L-BFGS-B",  # this method lets set lower bounds
-            lower = -Inf,         
-            control = list(fnscale = -1), # maximize
-            hessian = T                   # calculate Hessian matricce 
-)
+#MLE = optim(c(0.1),               
+#            fn = normalF,         # function to maximize
+#            method = "L-BFGS-B",  # this method lets set lower bounds
+#            lower = -Inf,         
+#            control = list(fnscale = -1), # maximize
+#            hessian = T                   # calculate Hessian matricce 
+#)
 
 
-MLE
-MLE$value
+##MLE
+#MLE$value
 
-#nll
-2*1 - 2*(MLE$value)
+##nll
+#2*1 - 2*(MLE$value)
 
 #R2
-R2(df.modelfull$Est.Int, df.modelfull$Rep.Int)
+#R2(df.modelfull$Est.Int, df.modelfull$Rep.Int)
 
-RSQUARE = function(actual, preds){
-  sse = crossprod(actual - preds)
-  sst = crossprod(actual)
-  rsq <- 1-sse/sst
-  return(rsq)
-}
-RSQUARE(df.modelfull$Rep.Dom, df.modelfull$Est.Dom)
+#RSQUARE = function(actual, preds){
+#  sse = crossprod(actual - preds)
+#  sst = crossprod(actual)
+#  rsq <- 1-sse/sst
+#  return(rsq)
+#}
+#RSQUARE(df.modelfull$Rep.Dom, df.modelfull$Est.Dom)
+
+# No fitted parameters, calculated loglikelihood for mechanistic model
+LL.CA=sum(dpois(df.modelfull$Rep.Dom, df.modelfull$Est.Dom, log = TRUE))
+LL.INT=sum(dpois(df.modelfull$Rep.Int, df.modelfull$Est.Int, log = TRUE))
+
+
+mech.AICc.CA = -2*LL.CA
+mech.AICc.INT = -2*LL.INT
+
+mech.mod.CA = c(Modnames = "mechanistic", K=0, AICc = mech.AICc.CA, Delta_AICc = mech.AICc.CA- as.numeric(AIC.CA$AICc[1]), ModelLik="", AICcWt = "", LL = LL.CA, Cum.Wt = "",LR="")
+mech.mod.INT = c(Modnames = "mechanistic", K=0, AICc = mech.AICc.INT, Delta_AICc = mech.AICc.INT- as.numeric(AIC.INT$AICc[1]), ModelLik="", AICcWt = "", LL = LL.INT, Cum.Wt = "",LR="")
+
+AIC.CA=rbind(AIC.CA, mech.mod.CA)
+AIC.INT=rbind(AIC.INT, mech.mod.INT)
 
 ######### Save the best model output for both international and domestic
-bestmodel.Int <- predict(TVInt)
-bestmodel.CA <- predict(TVInfPr)
+bestmodel.Int <- TVInt$fitted.values
+bestmodel.CA <- TVInfPr$fitted.values
 # make one dataframe including epi model, best model and reported for plotting 
 # these are 273 values start from Sep 1 whereas predicted Imp start from Sep 6, 
 # do adjust to make dataframe
@@ -521,5 +582,5 @@ dfplt["bestDom"] <- bestmodel.CA[6:273]
 #there are couple negative in Dom
 dfplt$bestDom[dfplt$bestDom < 0 ] <- 0
 
-
-
+print(AIC.CA)
+print(AIC.INT)
